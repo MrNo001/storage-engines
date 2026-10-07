@@ -1,7 +1,6 @@
 #include "simple_engine.hpp"
 
 #include <iostream>
-#include <string>
 
 int main() {
     SimpleEngine se("db");
@@ -9,8 +8,7 @@ int main() {
     se.insert("hejj", "newer");
     se.insert("other", "x");
 
-    std::string v = se.get("hejj");
-    
+    auto v = se.get("hejj");
     if (v) {
         std::cout << *v << "\n";
     }

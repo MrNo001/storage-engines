@@ -1,12 +1,10 @@
 
 
-
-
 all: build
 	./simple_engine
 
 build:
-	c++ simple_engine.cpp simple_engine_test.cpp -o bin/simple_engine
+	g++ simple_engine.cpp simple_engine_test.cpp -o bin/simple_engine
 
 clean:
 	rm -f simple_engine
