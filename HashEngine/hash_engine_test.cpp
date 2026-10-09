@@ -2,7 +2,9 @@
 
 #include <iostream>
 
-int main() {
+namespace {
+
+void test_basic_operations() {
     HashEngine he("db");
     he.insert("hejj", "ojjj");
     he.insert("hejj", "newer");
@@ -26,8 +28,18 @@ int main() {
     for (const auto& [k, v] : he.rangeQuery("a", "z")) {
         std::cout << k << "=" << v << "\n";
     }
+}
 
+void test_compaction() {
+    HashEngine he("db");
     he.force_compact();
     std::cout << "after compact: keys=" << he.key_count()
               << " m=" << he.get("m").value_or("<missing>") << "\n";
+}
+
+}  // namespace
+
+int main() {
+    test_basic_operations();
+    test_compaction();
 }
