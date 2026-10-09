@@ -1,38 +1,16 @@
 #ifndef LSM_ENGINE_HPP
 #define LSM_ENGINE_HPP
 
+#include "manifest.hpp"
+#include "wal.hpp"
+
 #include <cstdint>
-#include <functional>
 #include <map>
 #include <optional>
 #include <string>
 #include <sys/types.h>
 #include <utility>
 #include <vector>
-
-
-class WAL {
-public:
-    WAL(const std::string& path);
-    ~WAL();
-
-    WAL(const WAL&) = delete;
-    WAL& operator=(const WAL&) = delete;
-
-    void open();
-    void append(const std::string& key, const std::string& value, bool deleted);
-    void truncate();
-    void replay(const std::function<void(const std::string& key, const std::string& value, bool deleted)>& handler);
-
-    std::string& path();
-    const std::string& path() const;
-
-private:
-    void close();
-
-    std::string path_;
-    int fd_;
-};
 
 class LsmEngine {
 public:
@@ -104,6 +82,7 @@ private:
 
     std::string dir;
     WAL wal;
+    Manifest manifest;
     std::map<std::string, Entry> memtable;
     size_t memtable_bytes;
     std::vector<SSTable> tables;

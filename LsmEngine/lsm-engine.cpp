@@ -1,4 +1,5 @@
 #include "lsm-engine.hpp"
+#include "utils.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -8,167 +9,12 @@
 #include <stdexcept>
 #include <unordered_set>
 #include <unistd.h>
-#include <sys/stat.h>
+
+using namespace utils;
 
 namespace {
 
-void fail(const char* operation) {
-    throw std::runtime_error(std::string(operation) + " failed: " + std::strerror(errno));
-}
-
-int durable_sync(int fd) {
-    return ::fdatasync(fd);
-}
-
-void ensure_directory(const std::string& path) {
-    if (::mkdir(path.c_str(), 0755) < 0 && errno != EEXIST) {
-        fail("mkdir");
-    }
-}
-
-void fsync_directory(const std::string& path) {
-    int fd = ::open(path.c_str(), O_RDONLY);
-    if (fd < 0) {
-        return;
-    }
-    durable_sync(fd);
-    ::close(fd);
-}
-
-off_t current_offset(int fd) {
-    off_t offset = ::lseek(fd, 0, SEEK_CUR);
-    if (offset == static_cast<off_t>(-1)) {
-        fail("lseek");
-    }
-    return offset;
-}
-
-void seek_to(int fd, off_t offset) {
-    if (::lseek(fd, offset, SEEK_SET) == static_cast<off_t>(-1)) {
-        fail("lseek");
-    }
-}
-
-void seek_to_end(int fd) {
-    if (::lseek(fd, 0, SEEK_END) == static_cast<off_t>(-1)) {
-        fail("lseek");
-    }
-}
-
-void write_bytes(int fd, const void* data, size_t size) {
-    const char* ptr = static_cast<const char*>(data);
-    size_t remaining = size;
-
-    while (remaining > 0) {
-        ssize_t written = ::write(fd, ptr, remaining);
-        if (written < 0) {
-            fail("write");
-        }
-        ptr += written;
-        remaining -= static_cast<size_t>(written);
-    }
-}
-
-bool try_read_bytes(int fd, void* data, size_t size) {
-    char* ptr = static_cast<char*>(data);
-    size_t remaining = size;
-
-    while (remaining > 0) {
-        ssize_t n = ::read(fd, ptr, remaining);
-        if (n < 0) {
-            fail("read");
-        }
-        if (n == 0) {
-            return false;
-        }
-        ptr += n;
-        remaining -= static_cast<size_t>(n);
-    }
-    return true;
-}
-
-void write_u8(int fd, uint8_t value) {
-    write_bytes(fd, &value, sizeof(value));
-}
-
-void write_u32(int fd, uint32_t value) {
-    write_bytes(fd, &value, sizeof(value));
-}
-
-void write_u64(int fd, uint64_t value) {
-    write_bytes(fd, &value, sizeof(value));
-}
-
-bool try_read_u8(int fd, uint8_t& value) {
-    return try_read_bytes(fd, &value, sizeof(value));
-}
-
-bool try_read_u32(int fd, uint32_t& value) {
-    return try_read_bytes(fd, &value, sizeof(value));
-}
-
-bool try_read_u64(int fd, uint64_t& value) {
-    return try_read_bytes(fd, &value, sizeof(value));
-}
-
-void write_record(int fd, const std::string& key, const std::string& value, bool deleted) {
-    write_u32(fd, static_cast<uint32_t>(key.size()));
-    write_u32(fd, static_cast<uint32_t>(value.size()));
-    write_u8(fd, deleted ? 1 : 0);
-    write_bytes(fd, key.data(), key.size());
-    write_bytes(fd, value.data(), value.size());
-}
-
-bool try_read_record(int fd, std::string& key, std::string& value, bool& deleted) {
-    uint32_t key_size = 0;
-    uint32_t value_size = 0;
-    uint8_t deleted_flag = 0;
-
-    if (!try_read_u32(fd, key_size)) {
-        return false;
-    }
-    if (!try_read_u32(fd, value_size)) {
-        return false;
-    }
-    if (!try_read_u8(fd, deleted_flag)) {
-        return false;
-    }
-
-    key.resize(key_size);
-    if (key_size > 0 && !try_read_bytes(fd, key.data(), key_size)) {
-        return false;
-    }
-
-    value.resize(value_size);
-    if (value_size > 0 && !try_read_bytes(fd, value.data(), value_size)) {
-        return false;
-    }
-
-    deleted = deleted_flag != 0;
-    return true;
-}
-
 constexpr size_t SST_READ_BLOCK = 4096;
-
-bool try_pread_bytes(int fd, off_t offset, void* data, size_t size) {
-    char* ptr = static_cast<char*>(data);
-    size_t remaining = size;
-    off_t cursor = offset;
-
-    while (remaining > 0) {
-        ssize_t n = ::pread(fd, ptr, remaining, cursor);
-        if (n < 0) {
-            fail("pread");
-        }
-        if (n == 0) {
-            return false;
-        }
-        ptr += n;
-        remaining -= static_cast<size_t>(n);
-        cursor += n;
-    }
-    return true;
-}
 
 struct SstBlockReader {
     int fd = -1;
@@ -339,6 +185,7 @@ bool bloom_maybe_contains(const std::vector<uint8_t>& bits, uint32_t hash_count,
 LsmEngine::LsmEngine(const std::string& dir_path)
     : dir(dir_path),
       wal(dir_path + "/wal.log"),
+      manifest(dir_path + "/manifest"),
       memtable_bytes(0),
       next_sst_id(1) {
     ensure_directory(dir);
@@ -475,73 +322,6 @@ std::string& LsmEngine::active_file_path() {
     return wal.path();
 }
 
-WAL::WAL(const std::string& path) : path_(path), fd_(-1) {}
-
-WAL::~WAL() {
-    close();
-}
-
-std::string& WAL::path() {
-    return path_;
-}
-
-const std::string& WAL::path() const {
-    return path_;
-}
-
-void WAL::open() {
-    fd_ = ::open(path_.c_str(), O_RDWR | O_CREAT, 0644);
-    if (fd_ < 0) {
-        fail("open");
-    }
-
-    auto slash = path_.find_last_of('/');
-    if (slash != std::string::npos) {
-        fsync_directory(path_.substr(0, slash));
-    }
-}
-
-void WAL::close() {
-    if (fd_ < 0) {
-        return;
-    }
-    durable_sync(fd_);
-    ::close(fd_);
-    fd_ = -1;
-}
-
-void WAL::replay(const std::function<void(const std::string& key, const std::string& value, bool deleted)>& handler) {
-    seek_to(fd_, 0);
-
-    for (;;) {
-        std::string key;
-        std::string value;
-        bool deleted = false;
-        if (!try_read_record(fd_, key, value, deleted)) {
-            break;
-        }
-        handler(key, value, deleted);
-    }
-}
-
-void WAL::truncate() {
-    if (::ftruncate(fd_, 0) < 0) {
-        fail("ftruncate");
-    }
-    seek_to(fd_, 0);
-    if (durable_sync(fd_) < 0) {
-        fail("fsync");
-    }
-}
-
-void WAL::append(const std::string& key, const std::string& value, bool deleted) {
-    seek_to_end(fd_);
-    write_record(fd_, key, value, deleted);
-    if (durable_sync(fd_) < 0) {
-        fail("fsync");
-    }
-}
-
 void LsmEngine::insert_entry_memtable(const std::string& key, const std::string& value, bool deleted) {
     auto it = memtable.find(key);
     if (it != memtable.end()) {
@@ -582,59 +362,21 @@ void LsmEngine::flush_memtable() {
 }
 
 void LsmEngine::load_manifest() {
-    std::string path = dir + "/manifest";
-    int fd = ::open(path.c_str(), O_RDONLY);
-    if (fd < 0) {
-        if (errno == ENOENT) {
-            return;
-        }
-        fail("open");
-    }
-
-    uint32_t count = 0;
-    if (!try_read_u32(fd, count)) {
-        ::close(fd);
-        return;
-    }
-
-    for (uint32_t i = 0; i < count; i++) {
-        uint64_t id = 0;
-        if (!try_read_u64(fd, id)) {
-            ::close(fd);
-            throw std::runtime_error("load_manifest failed: truncated manifest");
-        }
+    for (uint64_t id : manifest.load()) {
         tables.push_back(open_sstable(id));
         if (id + 1 > next_sst_id) {
             next_sst_id = id + 1;
         }
     }
-
-    ::close(fd);
 }
 
 void LsmEngine::persist_manifest() {
-    std::string tmp_path = dir + "/manifest.tmp";
-    std::string path = dir + "/manifest";
-
-    int fd = ::open(tmp_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
-        fail("open");
-    }
-
-    write_u32(fd, static_cast<uint32_t>(tables.size()));
+    std::vector<uint64_t> table_ids;
+    table_ids.reserve(tables.size());
     for (const SSTable& table : tables) {
-        write_u64(fd, table.id);
+        table_ids.push_back(table.id);
     }
-
-    if (durable_sync(fd) < 0) {
-        fail("fsync");
-    }
-    ::close(fd);
-
-    if (::rename(tmp_path.c_str(), path.c_str()) < 0) {
-        fail("rename");
-    }
-    fsync_directory(dir);
+    manifest.persist(table_ids);
 }
 
 std::string LsmEngine::sstable_path(uint64_t id) const {
