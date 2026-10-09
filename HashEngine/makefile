@@ -1,18 +1,24 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra
 
+ENGINE = hash_engine
+TEST = hash_engine_test
+BIN_DIR = bin
+
 build: build_exe build_lib
 
 build_lib:
-	mkdir -p bin
-	$(CXX) $(CXXFLAGS) -c hash_engine.cpp -o bin/hash-engine.o
+	mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) -c $(ENGINE).cpp -o $(BIN_DIR)/$(ENGINE).o
 
 build_exe:
-	mkdir -p bin
-	$(CXX) $(CXXFLAGS) hash_engine.cpp hash_engine_test.cpp -o bin/hash_engine
+	mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $(ENGINE).cpp $(TEST).cpp -o $(BIN_DIR)/$(ENGINE)
 
 run: build_exe
-	cd bin && ./hash_engine
+	cd $(BIN_DIR) && ./$(ENGINE)
 
 clean:
-	rm -f bin/hash-engine.o bin/hash_engine
+	rm -rf $(BIN_DIR)
+
+.PHONY: build build_lib build_exe run clean

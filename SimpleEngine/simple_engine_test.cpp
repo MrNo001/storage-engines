@@ -2,7 +2,9 @@
 
 #include <iostream>
 
-int main() {
+namespace {
+
+void test_basic_operations() {
     SimpleEngine se("db");
     se.insert("hejj", "ojjj");
     se.insert("hejj", "newer");
@@ -26,4 +28,10 @@ int main() {
     for (const auto& [k, v] : se.rangeQuery("a", "z")) {
         std::cout << k << "=" << v << "\n";
     }
+}
+
+}  // namespace
+
+int main() {
+    test_basic_operations();
 }

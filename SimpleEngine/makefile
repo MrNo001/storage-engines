@@ -1,14 +1,24 @@
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall -Wextra
 
+ENGINE = simple_engine
+TEST = simple_engine_test
+BIN_DIR = bin
 
-all: build
-	./simple_engine
+build: build_exe build_lib
 
-build:
-	g++ simple_engine.cpp simple_engine_test.cpp -o bin/simple_engine
+build_lib:
+	mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) -c $(ENGINE).cpp -o $(BIN_DIR)/$(ENGINE).o
+
+build_exe:
+	mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $(ENGINE).cpp $(TEST).cpp -o $(BIN_DIR)/$(ENGINE)
+
+run: build_exe
+	cd $(BIN_DIR) && ./$(ENGINE)
 
 clean:
-	rm -f simple_engine
+	rm -rf $(BIN_DIR)
 
-
-run:
-	cd bin && ./simple_engine
+.PHONY: build build_lib build_exe run clean
