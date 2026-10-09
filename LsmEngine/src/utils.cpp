@@ -1,35 +1,29 @@
-#ifndef LSM_UTILS_HPP
-#define LSM_UTILS_HPP
+#include "utils.hpp"
 
 #include <cerrno>
-#include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <stdexcept>
-#include <string>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
-
 
 namespace utils {
 
-inline void fail(const char* operation) {
+void fail(const char* operation) {
     throw std::runtime_error(std::string(operation) + " failed: " + std::strerror(errno));
 }
 
-inline int durable_sync(int fd) {
+int durable_sync(int fd) {
     return ::fdatasync(fd);
 }
 
-inline void ensure_directory(const std::string& path) {
+void ensure_directory(const std::string& path) {
     if (::mkdir(path.c_str(), 0755) < 0 && errno != EEXIST) {
         fail("mkdir");
     }
 }
 
-inline std::string parent_directory(const std::string& path) {
+std::string parent_directory(const std::string& path) {
     const auto slash = path.find_last_of('/');
     if (slash == std::string::npos) {
         return ".";
@@ -40,7 +34,7 @@ inline std::string parent_directory(const std::string& path) {
     return path.substr(0, slash);
 }
 
-inline void fsync_directory(const std::string& path) {
+void fsync_directory(const std::string& path) {
     int fd = ::open(path.c_str(), O_RDONLY);
     if (fd < 0) {
         return;
@@ -49,7 +43,7 @@ inline void fsync_directory(const std::string& path) {
     ::close(fd);
 }
 
-inline off_t current_offset(int fd) {
+off_t current_offset(int fd) {
     off_t offset = ::lseek(fd, 0, SEEK_CUR);
     if (offset == static_cast<off_t>(-1)) {
         fail("lseek");
@@ -57,19 +51,19 @@ inline off_t current_offset(int fd) {
     return offset;
 }
 
-inline void seek_to(int fd, off_t offset) {
+void seek_to(int fd, off_t offset) {
     if (::lseek(fd, offset, SEEK_SET) == static_cast<off_t>(-1)) {
         fail("lseek");
     }
 }
 
-inline void seek_to_end(int fd) {
+void seek_to_end(int fd) {
     if (::lseek(fd, 0, SEEK_END) == static_cast<off_t>(-1)) {
         fail("lseek");
     }
 }
 
-inline void write_bytes(int fd, const void* data, size_t size) {
+void write_bytes(int fd, const void* data, size_t size) {
     const char* ptr = static_cast<const char*>(data);
     size_t remaining = size;
 
@@ -83,7 +77,7 @@ inline void write_bytes(int fd, const void* data, size_t size) {
     }
 }
 
-inline bool try_read_bytes(int fd, void* data, size_t size) {
+bool try_read_bytes(int fd, void* data, size_t size) {
     char* ptr = static_cast<char*>(data);
     size_t remaining = size;
 
@@ -101,7 +95,7 @@ inline bool try_read_bytes(int fd, void* data, size_t size) {
     return true;
 }
 
-inline bool try_pread_bytes(int fd, off_t offset, void* data, size_t size) {
+bool try_pread_bytes(int fd, off_t offset, void* data, size_t size) {
     char* ptr = static_cast<char*>(data);
     size_t remaining = size;
     off_t cursor = offset;
@@ -121,31 +115,31 @@ inline bool try_pread_bytes(int fd, off_t offset, void* data, size_t size) {
     return true;
 }
 
-inline void write_u8(int fd, uint8_t value) {
+void write_u8(int fd, uint8_t value) {
     write_bytes(fd, &value, sizeof(value));
 }
 
-inline void write_u32(int fd, uint32_t value) {
+void write_u32(int fd, uint32_t value) {
     write_bytes(fd, &value, sizeof(value));
 }
 
-inline void write_u64(int fd, uint64_t value) {
+void write_u64(int fd, uint64_t value) {
     write_bytes(fd, &value, sizeof(value));
 }
 
-inline bool try_read_u8(int fd, uint8_t& value) {
+bool try_read_u8(int fd, uint8_t& value) {
     return try_read_bytes(fd, &value, sizeof(value));
 }
 
-inline bool try_read_u32(int fd, uint32_t& value) {
+bool try_read_u32(int fd, uint32_t& value) {
     return try_read_bytes(fd, &value, sizeof(value));
 }
 
-inline bool try_read_u64(int fd, uint64_t& value) {
+bool try_read_u64(int fd, uint64_t& value) {
     return try_read_bytes(fd, &value, sizeof(value));
 }
 
-inline void write_record(int fd, const std::string& key, const std::string& value, bool deleted) {
+void write_record(int fd, const std::string& key, const std::string& value, bool deleted) {
     write_u32(fd, static_cast<uint32_t>(key.size()));
     write_u32(fd, static_cast<uint32_t>(value.size()));
     write_u8(fd, deleted ? 1 : 0);
@@ -153,7 +147,7 @@ inline void write_record(int fd, const std::string& key, const std::string& valu
     write_bytes(fd, value.data(), value.size());
 }
 
-inline bool try_read_record(int fd, std::string& key, std::string& value, bool& deleted) {
+bool try_read_record(int fd, std::string& key, std::string& value, bool& deleted) {
     uint32_t key_size = 0;
     uint32_t value_size = 0;
     uint8_t deleted_flag = 0;
@@ -183,5 +177,3 @@ inline bool try_read_record(int fd, std::string& key, std::string& value, bool& 
 }
 
 }  // namespace utils
-
-#endif

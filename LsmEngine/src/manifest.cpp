@@ -1,34 +1,15 @@
-#ifndef LSM_MANIFEST_HPP
-#define LSM_MANIFEST_HPP
-
+#include "manifest.hpp"
 #include "utils.hpp"
 
 #include <cerrno>
-#include <cstdint>
 #include <cstdio>
 #include <fcntl.h>
 #include <stdexcept>
-#include <string>
 #include <unistd.h>
-#include <vector>
 
-class Manifest {
-public:
-    Manifest(const std::string& path);
+Manifest::Manifest(const std::string& path) : path_(path) {}
 
-    Manifest(const Manifest&) = delete;
-    Manifest& operator=(const Manifest&) = delete;
-
-    std::vector<uint64_t> load() const;
-    void persist(const std::vector<uint64_t>& table_ids);
-
-private:
-    std::string path_;
-};
-
-inline Manifest::Manifest(const std::string& path) : path_(path) {}
-
-inline std::vector<uint64_t> Manifest::load() const {
+std::vector<uint64_t> Manifest::load() const {
     std::vector<uint64_t> table_ids;
 
     int fd = ::open(path_.c_str(), O_RDONLY);
@@ -58,7 +39,7 @@ inline std::vector<uint64_t> Manifest::load() const {
     return table_ids;
 }
 
-inline void Manifest::persist(const std::vector<uint64_t>& table_ids) {
+void Manifest::persist(const std::vector<uint64_t>& table_ids) {
     const std::string tmp_path = path_ + ".tmp";
 
     int fd = ::open(tmp_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
@@ -81,5 +62,3 @@ inline void Manifest::persist(const std::vector<uint64_t>& table_ids) {
     }
     utils::fsync_directory(utils::parent_directory(path_));
 }
-
-#endif

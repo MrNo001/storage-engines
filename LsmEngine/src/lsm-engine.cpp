@@ -180,7 +180,7 @@ bool bloom_maybe_contains(const std::vector<uint8_t>& bits, uint32_t hash_count,
     return true;
 }
 
-}  // namespace
+} 
 
 LsmEngine::LsmEngine(const std::string& dir_path)
     : dir(dir_path),
